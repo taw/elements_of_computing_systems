@@ -1,0 +1,13 @@
+CHIP ConditionalDecoder4 {
+    IN in[2], sel;
+    OUT a,b,c,d;
+
+    PARTS:
+      Not(in=in[0], out=n0);
+      Not(in=in[1], out=n1);
+
+      And3Way(a=in[0], b=in[1], c=sel, out=d);
+      And3Way(a=n0,    b=in[1], c=sel, out=c);
+      And3Way(a=in[0], b=n1,    c=sel, out=b);
+      And3Way(a=n0,    b=n1,    c=sel, out=a);
+}
