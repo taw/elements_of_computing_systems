@@ -1,0 +1,13 @@
+CHIP Preproc16 {
+    IN  
+      in[16],
+      z,
+      n;
+    OUT
+      out[16];
+
+    PARTS:
+      Mux16(a=in, b=false, sel=z, out=step1);
+      Not16(in=step1, out=notstep1);
+      Mux16(a=step1, b=notstep1, sel=n, out=out);
+}
