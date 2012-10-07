@@ -1,0 +1,17 @@
+CHIP JumpLogic {
+  IN zr, ng,
+     j[3],
+     cinstruction;
+  OUT out;
+
+  PARTS:
+    Not(in=ng,out=pos);
+    
+    And(a=ng,b=j[2],out=jneg);
+    And(a=zr,b=j[1],out=jzero);
+    And(a=pos,b=j[0],out=jpos);
+    Or(a=jneg, b=jpos, out=jne);
+    Or(a=jzero, b=jne, out=jumplogicout);
+    
+    And(a=cinstruction, b=jumplogicout, out=out);
+}

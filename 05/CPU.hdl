@@ -39,5 +39,46 @@ CHIP CPU {
         pc[15];          // address of next instruction
 
      PARTS:
-    // Put your code here.
+
+     /* decode instruction */
+       And(a=instruction[15], b=instruction[5], out=writeA1);
+       And(a=instruction[15], b=instruction[4], out=writeD);
+       And(a=instruction[15], b=instruction[3], out=writeM);
+       Not(in=instruction[15], out=ainstruction);
+       Or(a=ainstruction, b=writeA1, out=writeA);
+       Wire6(in=instruction[6..11], out=c); // debug only and I fucking hate this language...
+     
+     /* mux memory input to ALU*/
+       Mux16(a=aout, b=inM, sel=instruction[12], out=amout);
+       Mux16(a=aluout, b=instruction, sel=ainstruction, out=regin);
+
+     /* Registers */
+       DRegister(in=regin, load=writeD, out=dout);
+       ARegister(in=regin, load=writeA, out=aout);
+       Wire16(in=regin, out=outM);
+
+       Wire15of16(in=aout, out=addressM);
+       
+       /* ALU */
+       ALU(
+         x=dout,
+         y=amout,
+         zx=instruction[11],
+         nx=instruction[10],
+         zy=instruction[9],
+         ny=instruction[8],
+         f =instruction[7],
+         no=instruction[6],
+         // out:
+         out=aluout,
+         zr=zr,
+         ng=ng
+       );
+       
+       JumpLogic(zr=zr,ng=ng,j=instruction[0..2],cinstruction=instruction[15],out=jump);
+       
+       Not(in=jump, out=njump);
+       Mux16(a=pcx, b=aout, sel=jump, out=pcxnext);
+       PC(in=pcxnext, load=jump, inc=njump, reset=reset, out=pcx);
+       Wire15of16(in=pcx, out=pc);
 }
