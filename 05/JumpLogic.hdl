@@ -5,7 +5,8 @@ CHIP JumpLogic {
   OUT out;
 
   PARTS:
-    Not(in=ng,out=pos);
+    Or(a=ng,b=zr,out=zeroneg);
+    Not(in=zeroneg,out=pos);
     
     And(a=ng,b=j[2],out=jneg);
     And(a=zr,b=j[1],out=jzero);
