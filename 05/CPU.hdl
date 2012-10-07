@@ -55,7 +55,7 @@ CHIP CPU {
      /* Registers */
        DRegister(in=regin, load=writeD, out=dout);
        ARegister(in=regin, load=writeA, out=aout);
-       Wire16(in=regin, out=outM);
+       Wire16(in=aluout, out=outM);
 
        Wire15of16(in=aout, out=addressM);
        
