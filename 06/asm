@@ -1,0 +1,173 @@
+#!/usr/bin/env ruby
+
+class Assembler
+  def initialize
+    @opcodes = []
+    init_symbols!
+    @rewrite = []
+    @var_counter = 16
+  end
+
+  def init_symbols!
+    @symbols = {
+      "SP" => 0,
+      "LCL" => 1,
+      "ARG" => 2,
+      "THIS" => 3,
+      "THAT" => 4,
+      "SCREEN" => 0x4000,
+      "KBD" => 0x6000,
+    }
+    (0..15).each{|i|
+      @symbols["R#{i}"] = i
+    }
+  end
+  
+  def asm_warn(w)
+    warn "#{@path}:#{@lno} #{w}"
+  end
+  
+  def parse!(path)
+    @path = path
+    @lno = 0
+    File.readlines(path).each{|line|
+      @lno += 1
+      parse_line! line
+    }
+    finalize!
+  end
+  
+  def parse_jmp(jmp)
+    jmp_table = {
+      ""    => 0,
+      "jgt" => 1,
+      "jeq" => 2,
+      "jge" => 3,
+      "jlt" => 4,
+      "jne" => 5,
+      "jle" => 6,
+      "jmp" => 7,
+    }
+    jmp ||= ""
+    asm_warn "Unknown jump opcode `#{jmp}'" unless jmp_table[jmp.downcase]
+    jmp_table[jmp.downcase] || 0
+  end
+
+  def parse_dest(dest)
+    dest ||= ""
+    dest = dest.downcase
+    asm_warn "Unknown destination: `#{dest}'" if dest =~ /[^amd]/
+    rv  = 0
+    rv += 1 if dest =~ /m/
+    rv += 2 if dest =~ /d/
+    rv += 4 if dest =~ /a/
+    rv
+  end
+  
+  def parse_comp(comp)
+    # mem | zero_d neg_am | zero_am neg_am | f neg_out
+    comp_table = {
+      "0"   => 0b0_10_10_10, # 0 + 0
+      "1"   => 0b0_11_11_11, # ~(FFFF + FFFF)
+      "-1"  => 0b0_11_10_10, # FFFF + 0
+      "d"   => 0b0_00_11_00, # d ^ FFFF
+      "a"   => 0b0_11_00_00, # FFFF & a
+      "m"   => 0b1_11_00_00,
+      "!d"  => 0b0_00_11_01, # ~(d & FFFF)
+      "!a"  => 0b0_11_00_01, # ~(FFFF & a)
+      "!m"  => 0b1_11_00_01, # ~(FFFF & m)
+      "-d"  => 0b0_00_11_11, # ~(d + FFFF)
+      "-a"  => 0b0_11_00_11, # ~(FFFF + a)
+      "-m"  => 0b1_11_00_11, # ~(FFFF + a)
+      "d+1" => 0b0_01_11_11, # ~(~d + FFFF)
+      "a+1" => 0b0_11_01_11, # ~(FFFF + ~a)
+      "m+1" => 0b1_11_01_11, # ~(FFFF + ~m)
+      "d-1" => 0b0_00_11_10, # (d + FFFF)
+      "a-1" => 0b0_11_00_10, # (FFFF + a)
+      "m-1" => 0b1_11_00_10, # (FFFF + m)
+      "d+a" => 0b0_00_00_10,
+      "d+m" => 0b1_00_00_10,
+      "d-a" => 0b0_01_00_11, # ~(~d + a)
+      "d-m" => 0b1_01_00_11, # ~(~d + m)
+      "a-d" => 0b0_00_01_11, # ~(d + ~a)
+      "m-d" => 0b1_00_01_11, # ~(d + ~m)
+      "d&a" => 0b0_00_00_00,
+      "d&m" => 0b1_00_00_00,
+      "d|a" => 0b0_01_01_01, # ~(~d & ~a)
+      "d|m" => 0b1_01_01_01, # ~(~d & ~m)
+    }
+    # Conveient redundant symbols
+    comp_table[nil] = comp_table["0"]
+    comp_table[""] = comp_table["0"]
+    comp_table["1+d"] = comp_table["d+1"]
+    comp_table["1+a"] = comp_table["m+1"]
+    comp_table["1+m"] = comp_table["a+1"]
+    comp_table["a+d"] = comp_table["d+a"]
+    comp_table["m+d"] = comp_table["d+m"]
+    comp_table["a&d"] = comp_table["d&a"]
+    comp_table["m&d"] = comp_table["d&m"]
+    comp_table["a|d"] = comp_table["d|a"]
+    comp_table["m|d"] = comp_table["d|m"]
+
+    asm_warn "Unknown calculation `#{comp}'" unless comp_table[comp.downcase]
+    comp_table[comp.downcase] || 0
+  end
+  
+  def parse_c!(dest, comp, jmp)
+    jmp  = parse_jmp(jmp)
+    comp = parse_comp(comp)
+    dest = parse_dest(dest)
+    @opcodes << (7 << 13) + (comp << 6) + (dest << 3) + jmp
+  end
+  
+  def parse_line!(line)
+    line = line.chomp.sub(/\A\s+/, "").sub(%r[//.*], "").sub(/\s+\z/, "")
+    return if line.empty?
+    case line
+    when /\A\((.*?)\)\z/
+      @symbols[$1] = @opcodes.size
+    when /\A@(\d+)\z/
+      @opcodes << $1.to_i
+    when /\A@(.*?)\z/
+      @rewrite << [@opcodes.size, $1]
+      @opcodes << 0
+    when /\A([^=;]*?)=([^=;]*?);([^=;]*?)\z/
+      parse_c!($1, $2, $3)
+    when /\A([^=;]*?);([^=;]*?)\z/
+      parse_c!(nil, $1, $2)
+    when /\A([^=;]*?)=([^=;]*?)\z/
+      parse_c!($1, $2, nil)
+    when /\A([^=;]*?)\z/
+      parse_c!(nil, $1, nil)
+    else
+      asm_warn "No idea how to translate `#{line}'"
+    end
+  end
+
+  def finalize!
+    @rewrite.each{|loc, sym|
+      unless @symbols[sym]
+        @symbols[sym] = @var_counter
+        @var_counter += 1
+      end
+      @opcodes[loc] = @symbols[sym]
+    }
+  end
+
+  def save!(path)
+    File.open(path, 'wb'){|fh|
+      fh.puts @opcodes.map{|o| "%016b" % o}
+    }
+  end
+
+  def self.run!(path)
+    path_out = path.sub(/\.asm\z/, ".hack")
+    asm = Assembler.new
+    asm.parse!(path)
+    asm.save!(path_out)
+  end
+end
+
+ARGV.each{|path|
+  Assembler.run!(path)
+}
